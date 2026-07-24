@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm  # <-- ADD THIS
 from sqlalchemy.orm import Session
 from datetime import timedelta
 
@@ -27,10 +27,15 @@ def signup(user_data: UserCreate, db: Session = Depends(get_db)):
     db.refresh(new_user)
     return new_user
 
+# ---------- UPDATED LOGIN ENDPOINT ----------
 @router.post("/login", response_model=Token)
-def login(user_data: UserLogin, db: Session = Depends(get_db)):
-    user = db.query(User).filter(User.email == user_data.email).first()
-    if not user or not verify_password(user_data.password, user.hashed_password):
+def login(
+    form_data: OAuth2PasswordRequestForm = Depends(),
+    db: Session = Depends(get_db)
+):
+    # OAuth2PasswordRequestForm uses 'username' field for email
+    user = db.query(User).filter(User.email == form_data.username).first()
+    if not user or not verify_password(form_data.password, user.hashed_password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password",
@@ -43,7 +48,6 @@ def login(user_data: UserLogin, db: Session = Depends(get_db)):
 async def read_users_me(current_user: User = Depends(get_current_user)):
     return current_user
 
-# ---------- NEW: Update Profile ----------
 @router.put("/me", response_model=UserResponse)
 async def update_profile(
     update_data: UserUpdate,
@@ -53,7 +57,6 @@ async def update_profile(
     if update_data.full_name:
         current_user.full_name = update_data.full_name
     if update_data.email:
-        # Check if email is already taken by another user
         existing = db.query(User).filter(User.email == update_data.email).first()
         if existing and existing.id != current_user.id:
             raise HTTPException(status_code=400, detail="Email already in use")
@@ -63,7 +66,6 @@ async def update_profile(
     db.refresh(current_user)
     return current_user
 
-# ---------- NEW: Change Password ----------
 @router.put("/me/password")
 async def change_password(
     password_data: PasswordChange,
